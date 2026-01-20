@@ -1,0 +1,319 @@
+#include <iostream>                 //  libreria estandar de entrada y salida
+#include <vector>                   //  libreria estandar de vectores
+#include <stack>                    //  libreria estandar de pilas
+#include <queue>                    //  libreria estandar de colas
+#include <random>                   //  libreria estandar de numeros aleatorios
+#include <chrono>                   //  libreria estandar de tiempo
+#include <thread>                   //  libreria estandar de hilos      
+
+using namespace std;
+
+// Estructura para representar una celda del laberinto
+struct Cell {
+    int x, y;
+    Cell(int x = 0, int y = 0) : x(x), y(y) {}
+};
+
+// Clase principal del Laberinto
+class Maze {                                
+private:
+    int width, height;                  // Dimensiones del laberinto 
+    vector<vector<int>> grid;  // 0 = pared, 1 = camino, 2 = solución
+    Cell start, end;
+    
+    // Generador de números aleatorios
+    mt19937 rng;                                        // mt19937 es un algoritmo de generación de números pseudoaleatorios 
+    
+    // Direcciones: arriba, derecha, abajo, izquierda
+    const int dx[4] = {-1, 0, 1, 0};                    // desplazamientos en x izq y der
+    const int dy[4] = {0, 1, 0, -1};                    // desplazamientos en y arriba y abajo
+    
+public:
+    // Constructor
+    Maze(int w, int h) : width(w), height(h) {
+    // Inicializar generador aleatorio con semilla basada en tiempo
+        rng.seed(chrono::steady_clock::now().time_since_epoch().count());               // chrono::steady_clock::now().time_since_epoch().count() obtiene el tiempo actual en nanosegundos desde una época fija
+        
+        // Inicializar grid con paredes (todo en 0)
+        grid.resize(height, vector<int>(width, 0));         // 0 = pared
+        
+        // Definir entrada y salida
+        start = Cell(1, 1);  // CORREGIDO: Empezar en (1,1) en vez de (0,0)
+        end = Cell(height - 2, width - 2);  // CORREGIDO: Terminar en (h-2, w-2)
+    }
+    
+    // Verificar si una celda está dentro de los límites
+    bool isValid(int x, int y) {
+        return x >= 0 && x < height && y >= 0 && y < width;
+    }
+    
+    // Generar laberinto usando DFS (Depth-First Search) con Backtracking
+    void generate() {
+        cout << "\nGenerando laberinto aleatorio...\n";
+        
+        stack<Cell> path;                                                   // Pila para almacenar la ruta o camino actual
+        vector<vector<bool>> visited(height, vector<bool>(width, false));  // Matriz para rastrear celdas visitadas
+        
+        // Comenzar desde posición (1,1) - siempre impar
+        path.push(start);                               // Inicializar la pila con la celda de inicio
+        grid[start.x][start.y] = 1;                     // Marcar la celda como camino
+        visited[start.x][start.y] = true;               // Marcar la celda como visitada
+        
+        while (!path.empty()) {                         // Mientras la pila no este vacia
+            Cell current = path.top();                  // Obtener la celda actual sin sacarla de la pila
+            
+            // Obtener vecinos no visitados
+            vector<int> directions;
+            for (int i = 0; i < 4; i++) {
+                int nx = current.x + dx[i] * 2;             // Saltar 2 celdas en la direccion i para obtener la celda vecina 
+                int ny = current.y + dy[i] * 2;
+                
+                if (isValid(nx, ny) && !visited[nx][ny]) {  // Si la celda es valida y no ha sido visitada
+                    directions.push_back(i);                // Agregar la direccion a la lista de opciones 
+                }                                           // Fin de la condición      
+            }
+            
+            if (!directions.empty()) {                      // Si hay opciones disponibles para avanzar en la pila 
+            // Elegir dirección aleatoria
+                uniform_int_distribution<int> dist(0, directions.size() - 1);   // Generar un numero aleatorio entre 0 y el tamaño de la lista de opciones - 1
+                int dir = directions[dist(rng)];                                // Seleccionar una direccion aleatoria
+                
+                // Calcular siguiente celda
+                int nx = current.x + dx[dir] * 2;                               //  Saltar 2 celdas en la direccion seleccionada
+                int ny = current.y + dy[dir] * 2;
+                
+                // Marcar el camino intermedio
+                int mx = current.x + dx[dir];                                   //  Saltar 1 celda en la direccion seleccionada
+                int my = current.y + dy[dir];
+                
+                grid[mx][my] = 1;                                               // Marcar la celda intermedia como camino         
+                grid[nx][ny] = 1;                                               // Marcar la nueva celda como camino
+                visited[nx][ny] = true;                                         // Marcar la nueva celda como visitada
+                
+                path.push(Cell(nx, ny));                                        // Agregar la nueva celda a la pila
+            } else {
+                // Backtracking: retroceder
+                path.pop();                         // Sacar la celda actual de la pila
+            }
+        }
+        
+        // CORREGIDO: Crear camino desde esquina (0,0) hasta start (1,1)
+        grid[0][0] = 1;         // Marcar la celda (0,0) como camino
+        grid[0][1] = 1;         // Marcar la celda (0,1) como camino
+        grid[1][0] = 1;         // Marcar la celda (1,0) como camino
+        
+        // CORREGIDO: Crear camino desde end hasta esquina (h-1, w-1)
+        grid[height-1][width-1] = 1;        // Marcar la celda (h-1,w-1) como camino
+        grid[height-1][width-2] = 1;        // puente a la izquierda
+        grid[height-2][width-1] = 1;        // puente arriba
+        
+        cout << "Laberinto generado!\n";
+    }
+    
+    // Resolver laberinto usando BFS (Breadth-First Search)
+    bool solve() {
+        cout << "\nResolviendo laberinto con BFS...\n";
+        
+        queue<Cell> q;                     // Cola para BFS FIFO. Explorar nodos por niveles
+        vector<vector<bool>> visited(height, vector<bool>(width, false));           // Matriz de visitados
+        vector<vector<Cell>> parent(height, vector<Cell>(width, Cell(-1, -1)));     // Matriz de padres, reconstrucción de camino
+        
+        //Empezar desde (0,0)
+        Cell realStart(0, 0);                   
+        q.push(realStart);                      
+        visited[0][0] = true;                       
+        
+        bool found = false;                     // Bandera para indicar si se encontró la solución
+        Cell realEnd(height-1, width-1);
+                            // BFS principal. Bucle de exploración
+        while (!q.empty() && !found) {          // Mientras la cola no este vacia y no se haya encontrado la solucion
+            Cell current = q.front();           // Obtener la celda actual de la cola
+            q.pop();                            // Sacar la celda actual de la cola
+            
+            // Si llegamos al final (esquina inferior derecha)
+            if (current.x == realEnd.x && current.y == realEnd.y) {     // Si la celda actual es la celda final
+                found = true;                                          // Marcar que se encontró la solución
+                break;
+            }
+            
+            // Explorar vecinos (solo 1 celda de distancia)
+            for (int i = 0; i < 4; i++) {                       // Para cada una de las 4 direcciones
+                int nx = current.x + dx[i];                     // Calcular la nueva posición en x
+                int ny = current.y + dy[i];
+                
+                if (isValid(nx, ny) && grid[nx][ny] == 1 && !visited[nx][ny]) {     // Si la nueva posición es válida, es un camino y no ha sido visitada
+                    visited[nx][ny] = true;                                         // Marcar la celda como visitada
+                    parent[nx][ny] = current;                                       // Guardar el padre de la celda actual
+                    q.push(Cell(nx, ny));                                           // Agregar la nueva celda a la cola
+                }
+            }
+        }
+        
+        if (!found) {                               // Si no se encontró solución
+            cout << "X No se encontro solucion.\n";
+            return false;                           // Devolver false para indicar que no se encontró solución
+        }
+        
+        // Reconstruir el camino desde el final hasta el inicio
+        Cell current = realEnd;                                             // Empezar desde la celda final
+        while (!(current.x == 0 && current.y == 0)) {                       // Mientras no lleguemos al inicio (0,0)
+            // No marcar inicio ni fin
+            if (!(current.x == realEnd.x && current.y == realEnd.y) &&      // No marcar la celda final 
+                !(current.x == 0 && current.y == 0)) {                      // No marcar la celda inicio
+                grid[current.x][current.y] = 2;                             // Marcar solución
+            }
+            current = parent[current.x][current.y];             // Moverse al padre de la celda actual
+        }
+        
+        cout << "Laberinto resuelto!\n";
+        return true;                                            // Devolver true para indicar que se encontró solución
+    }
+    
+    // Visualizar laberinto
+    void display(bool showSolution = false) {                   // Mostrar el laberinto con o sin solución
+        cout << "\n";
+        
+        // Borde superior
+        for (int j = 0; j < width + 2; j++) cout << "#";        // +2 por los bordes laterales 
+        cout << "\n";          
+        
+        for (int i = 0; i < height; i++) {                       // Recorrer cada fila del laberinto   
+            cout << "#";  // Borde izquierdo
+            
+            for (int j = 0; j < width; j++) {                       // Recorrer cada celda del laberinto
+                if (i == 0 && j == 0) {
+                    cout << "S";                                    // Start (entrada en esquina superior izquierda)
+                } else if (i == height-1 && j == width-1) {
+                    cout << "E";                                    // End (salida en esquina inferior derecha)
+                } else if (showSolution && grid[i][j] == 2) {
+                    cout << "*";                                    // Solución
+                } else if (grid[i][j] == 1 || grid[i][j] == 2) {
+                    cout << " ";                                    // Camino
+                } else {
+                    cout << "#";                                    // Pared
+                }
+            }
+            
+            cout << "#\n";  // Borde derecho
+        }
+        
+        // Borde inferior
+        for (int j = 0; j < width + 2; j++) cout << "#";            
+        cout << "\n";
+    }
+    
+    // Animación de la solución paso a paso
+    void animateSolution() {
+        cout << "\nAnimando solucion...\n";
+        this_thread::sleep_for(chrono::milliseconds(800));              // Esperar 500ms antes de empezar
+        
+        for (int i = 0; i < height; i++) {                              // Recorrer cada celda del laberinto 
+            for (int j = 0; j < width; j++) {                           // Recorrer cada celda del laberinto 
+                if (grid[i][j] == 2) {                                  // Si la celda es solución 
+                    // Limpiar consola (funciona en la mayoría de sistemas)
+                    cout << "\033[2J\033[1;1H";                         // Limpiar consola.codigo ANSI
+                    
+                    // Temporalmente marcar hasta este punto
+                    int temp = grid[i][j];                              //  Guardar el valor de la celda    
+                    grid[i][j] = 3;  // Marcador temporal
+                    
+                    display(true);                                      // Mostrar laberinto con solución hasta este punto
+                    
+                    grid[i][j] = temp;
+                    
+                    this_thread::sleep_for(chrono::milliseconds(100));
+                }
+            }
+        }
+    }
+};
+
+// Función para medir tiempo de ejecución
+void benchmark() {                                              // Función de medición de rendimiento 
+    cout << "\n  BENCHMARK DE RENDIMIENTO\n";
+    cout << "================================\n";
+    
+    vector<int> sizes = {10, 20, 30, 50};
+    
+    for (int size : sizes) {                                    // Recorrer tamaños de laberintos
+        auto start = chrono::high_resolution_clock::now();  // Iniciar temporizador
+        
+        Maze maze(size, size);              // Crear laberinto
+        maze.generate();                    // Generar laberinto
+        maze.solve();                      // Resolver laberinto
+        
+        auto end = chrono::high_resolution_clock::now();                                   // Detener temporizador 
+        auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);         // Calcular duración  
+        
+        cout << "Tamaño " << size << "x" << size << ": "                                // Mostrar resultado
+            << duration.count() << " ms\n";
+    }
+}
+// Función principal del programa
+int main(int argc, char* argv[]) {                  
+    // Tamaño por defecto
+    int size = 15;             
+    
+    // Leer tamaño desde argumentos de línea de comandos
+    if (argc > 1) {                     // Si se proporcionaron argumentos de línea de comandos 
+        size = atoi(argv[1]);           // Convertir el primer argumento a entero. atoi convierte una cadena a un entero
+        if (size < 5) size = 5;  // Tamaño mínimo. Valida valores muy pequeños
+        if (size > 100) size = 100;  // Tamaño máximo. Valida valores muy grandes
+    }
+    
+    cout << "GENERADOR Y RESOLVEDOR DE LABERINTOS\n";
+    cout << "========================================\n";
+    
+    // Crear laberinto
+    Maze maze(size, size);              // Crear laberinto de tamaño size x size 
+    
+    // Medir tiempo de generación
+    auto t1 = chrono::high_resolution_clock::now();     
+    maze.generate();                            
+    auto t2 = chrono::high_resolution_clock::now();
+    
+    // Mostrar laberinto sin solución
+    cout << "\nLaberinto generado:\n";
+    maze.display(false);
+    
+    // Medir tiempo de resolución
+    auto t3 = chrono::high_resolution_clock::now();
+    bool solved = maze.solve();
+    auto t4 = chrono::high_resolution_clock::now();
+    
+    if (solved) {
+        // Mostrar laberinto con solución
+        cout << "\nLaberinto resuelto:\n";
+        maze.display(true);
+        
+        // Tiempos
+        auto gen_time = chrono::duration_cast<chrono::milliseconds>(t2 - t1);
+        auto solve_time = chrono::duration_cast<chrono::milliseconds>(t4 - t3);
+        
+        cout << "\n  Tiempos de ejecucion:\n";
+        cout << "   Generación: " << gen_time.count() << " ms\n";
+        cout << "   Resolución: " << solve_time.count() << " ms\n";
+        cout << "   Total: " << (gen_time + solve_time).count() << " ms\n";
+    }
+    
+    // Preguntar si desea ver animación
+    cout << "\n¿Deseas ver la animación de la solución? (s/n): ";
+    char choice;
+    cin >> choice;
+    
+    if (choice == 's' || choice == 'S') {
+        maze.animateSolution();
+        cout << "\nLaberinto resuelto (final):\n";
+        maze.display(true);
+    }
+    
+    // Preguntar si desea ejecutar benchmark
+    cout << "\n¿Deseas ejecutar benchmark de rendimiento? (s/n): ";
+    cin >> choice;
+    
+    if (choice == 's' || choice == 'S') {
+        benchmark();
+    }
+    
+    return 0;
+}
